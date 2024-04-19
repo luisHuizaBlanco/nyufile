@@ -65,3 +65,5 @@ nyufile-autograder/disks/disk1
 nyufile-autograder/disk
 nyufile-autograder/checksum.txt
 nyufile-autograder.tar.xz
+hexdump.hex
+nyufile-autograder/nyufile.o

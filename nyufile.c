@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <fcntl.h>
 
 #pragma pack(push,1)
 typedef struct BootEntry {
@@ -63,16 +66,51 @@ void validate()
     exit(0);
 }
 
-// void print_fs()
-// {
-//     int FAT_num, bps, spc, ress;
-
-
-// }
-
-void print_disk()
+void print_disk( char *filename)
 {
-    printf("print\n");
+    int fd;
+    unsigned char *addr;
+    size_t length;
+    struct stat sb;
+    int FATs, bytes_p_sector, sectors_p_cluster, reserved_sec;
+    struct BootEntry *dir;
+
+    fd = open(filename, O_RDWR);
+
+    if (fd == -1)
+    {
+        exit(0);
+    }
+    
+    if (fstat(fd, &sb) == -1) 
+    {
+        exit(0);
+    }
+
+    length = sb.st_size;         
+
+    addr = mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+
+    if (addr == MAP_FAILED)
+    {
+        exit(0);
+    }
+
+    dir = (BootEntry *)(addr);
+
+    FATs = (int)dir->BPB_NumFATs;
+    bytes_p_sector = (int)dir->BPB_BytsPerSec;
+    sectors_p_cluster = (int)dir->BPB_SecPerClus;
+    reserved_sec = (int)dir->BPB_RsvdSecCnt;
+
+
+    printf("Number of FATs = %d\n", FATs);
+    printf("Number of bytes per sector = %d\n", bytes_p_sector);
+    printf("Number of sectors per cluster = %d\n", sectors_p_cluster);
+    printf("Number of reserved sectors = %d\n", reserved_sec);
+
+    munmap(addr, length);
+    close(fd);
 
     exit(0);
 
@@ -80,7 +118,46 @@ void print_disk()
 
 void list_disk()
 {
-    printf("list\n");
+    int fd;
+    unsigned char *addr;
+    size_t length;
+    struct stat sb;
+    int FATs, bytes_p_sector, sectors_p_cluster, reserved_sec;
+    struct BootEntry *dir;
+
+    fd = open(filename, O_RDWR);
+
+    if (fd == -1)
+    {
+        exit(0);
+    }
+    
+    if (fstat(fd, &sb) == -1) 
+    {
+        exit(0);
+    }
+
+    length = sb.st_size;         
+
+    addr = mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+
+    if (addr == MAP_FAILED)
+    {
+        exit(0);
+    }
+
+    dir = (BootEntry *)(addr);
+
+    FATs = (int)dir->BPB_NumFATs;
+    bytes_p_sector = (int)dir->BPB_BytsPerSec;
+    sectors_p_cluster = (int)dir->BPB_SecPerClus;
+    reserved_sec = (int)dir->BPB_RsvdSecCnt;
+
+
+    printf("Number of FATs = %d\n", FATs);
+    printf("Number of bytes per sector = %d\n", bytes_p_sector);
+    printf("Number of sectors per cluster = %d\n", sectors_p_cluster);
+    printf("Number of reserved sectors = %d\n", reserved_sec);
 
     exit(0);
 
@@ -119,7 +196,7 @@ int main(int argc, char *argv[])
 
         if(strncmp(argv[2], "-i", 2) == 0)
         {
-            print_disk();
+            print_disk(argv[1]);
         }
 
         if(strncmp(argv[2], "-l", 2) == 0)
