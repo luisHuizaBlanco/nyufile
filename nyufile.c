@@ -66,16 +66,16 @@ void validate()
     exit(0);
 }
 
-void print_disk( char *filename)
+void print_disk(char *diskname)
 {
     int fd;
     unsigned char *addr;
     size_t length;
     struct stat sb;
     int FATs, bytes_p_sector, sectors_p_cluster, reserved_sec;
-    struct BootEntry *dir;
+    struct BootEntry *boot;
 
-    fd = open(filename, O_RDWR);
+    fd = open(diskname, O_RDWR);
 
     if (fd == -1)
     {
@@ -96,12 +96,12 @@ void print_disk( char *filename)
         exit(0);
     }
 
-    dir = (BootEntry *)(addr);
+    boot = (BootEntry *)(addr);
 
-    FATs = (int)dir->BPB_NumFATs;
-    bytes_p_sector = (int)dir->BPB_BytsPerSec;
-    sectors_p_cluster = (int)dir->BPB_SecPerClus;
-    reserved_sec = (int)dir->BPB_RsvdSecCnt;
+    FATs = (int)boot->BPB_NumFATs;
+    bytes_p_sector = (int)boot->BPB_BytsPerSec;
+    sectors_p_cluster = (int)boot->BPB_SecPerClus;
+    reserved_sec = (int)boot->BPB_RsvdSecCnt;
 
 
     printf("Number of FATs = %d\n", FATs);
@@ -116,16 +116,17 @@ void print_disk( char *filename)
 
 }
 
-void list_disk()
+void list_disk(char *diskname)
 {
     int fd;
     unsigned char *addr;
     size_t length;
     struct stat sb;
-    int FATs, bytes_p_sector, sectors_p_cluster, reserved_sec;
-    struct BootEntry *dir;
+    struct BootEntry *boot;
+    struct DirEntry *dir;
+    int FATs, FATsize, bytes_p_sector, sectors_p_cluster, reserved_sec, root_cluster, root_dir;
 
-    fd = open(filename, O_RDWR);
+    fd = open(diskname, O_RDWR);
 
     if (fd == -1)
     {
@@ -146,18 +147,98 @@ void list_disk()
         exit(0);
     }
 
-    dir = (BootEntry *)(addr);
+    boot = (BootEntry *)(addr);
 
-    FATs = (int)dir->BPB_NumFATs;
-    bytes_p_sector = (int)dir->BPB_BytsPerSec;
-    sectors_p_cluster = (int)dir->BPB_SecPerClus;
-    reserved_sec = (int)dir->BPB_RsvdSecCnt;
+    FATs = (int)boot->BPB_NumFATs;
+    FATsize = (int)boot->BPB_FATSz32;
+    bytes_p_sector = (int)boot->BPB_BytsPerSec;
+    sectors_p_cluster = (int)boot->BPB_SecPerClus;
+    reserved_sec = (int)boot->BPB_RsvdSecCnt;
+    root_cluster = (int)boot->BPB_RootClus;
 
+    root_dir = reserved_sec + (FATs * FATsize) + (root_cluster - 2);
 
-    printf("Number of FATs = %d\n", FATs);
-    printf("Number of bytes per sector = %d\n", bytes_p_sector);
-    printf("Number of sectors per cluster = %d\n", sectors_p_cluster);
-    printf("Number of reserved sectors = %d\n", reserved_sec);
+    //printf("%d\n", root_dir);
+
+    root_dir = (sectors_p_cluster * bytes_p_sector) * root_dir;
+
+    //printf("%d\n", root_dir);
+
+    dir = (DirEntry *)(addr + root_dir);
+
+    char *name;
+    int size, s_cluster, num_of_entries = 0;
+
+    while(dir->DIR_Name[0] != '\0')
+    {
+        if(dir->DIR_Name[0] == 0xe5 || dir->DIR_Name[0] == 0x00)
+        {
+            dir++;
+            continue;
+        }
+
+        name = (char *)dir->DIR_Name;
+        size = (int)dir->DIR_FileSize;
+        s_cluster = (int)((dir->DIR_FstClusHI << 16) + dir->DIR_FstClusLO);
+        num_of_entries++;
+
+        printf("%s", name);
+        printf("%d", s_cluster);
+
+        for(int i = 0; i < 11; i++){
+
+            if(name[i] == 0x20 || i == 8)
+            {
+                if(size == 0 && s_cluster > 0)
+                {
+                    printf("/ (starting cluster = %d)\n", s_cluster);
+
+                    break;
+                }
+                else if(size == 0 && s_cluster == 0)
+                {
+                    printf(" (size = %d)\n", size);
+
+                    break;
+                }
+                else if(name[8] != 0x20)
+                {
+                    printf(".%c", name[8]);
+
+                    if(name[9] != 0x20)
+                    {
+                        printf("%c", name[9]);
+
+                        if(name[10] != 0x20)
+                        {
+                            printf("%c", name[10]);
+                        }
+                    }
+                    
+                    printf(" (size = %d, starting cluster = %d)\n", size, s_cluster);
+
+                    break;                    
+                }
+                else
+                {
+                    printf(" (size = %d, starting cluster = %d)\n", size, s_cluster);
+
+                    break;
+                }
+            }
+            else
+            {
+                printf("%c", name[i]);
+            }
+        }
+
+        dir++;
+    }
+
+    printf("Total number of entries = %d\n", num_of_entries);
+
+    munmap(addr, length);
+    close(fd);
 
     exit(0);
 
@@ -201,7 +282,7 @@ int main(int argc, char *argv[])
 
         if(strncmp(argv[2], "-l", 2) == 0)
         {
-            list_disk();
+            list_disk(argv[1]);
         }
 
         if(strncmp(argv[2], "-r", 2) == 0)
