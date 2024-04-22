@@ -72,7 +72,6 @@ void print_disk(char *diskname)
     unsigned char *addr;
     size_t length;
     struct stat sb;
-    int FATs, bytes_p_sector, sectors_p_cluster, reserved_sec;
     struct BootEntry *boot;
 
     fd = open(diskname, O_RDWR);
@@ -98,10 +97,10 @@ void print_disk(char *diskname)
 
     boot = (BootEntry *)(addr);
 
-    FATs = (int)boot->BPB_NumFATs;
-    bytes_p_sector = (int)boot->BPB_BytsPerSec;
-    sectors_p_cluster = (int)boot->BPB_SecPerClus;
-    reserved_sec = (int)boot->BPB_RsvdSecCnt;
+    int FATs = (int)boot->BPB_NumFATs;
+    int bytes_p_sector = (int)boot->BPB_BytsPerSec;
+    int sectors_p_cluster = (int)boot->BPB_SecPerClus;
+    int reserved_sec = (int)boot->BPB_RsvdSecCnt;
 
 
     printf("Number of FATs = %d\n", FATs);
@@ -124,7 +123,6 @@ void list_disk(char *diskname)
     struct stat sb;
     struct BootEntry *boot;
     struct DirEntry *dir;
-    int FATs, FATsize, bytes_p_sector, sectors_p_cluster, reserved_sec, root_cluster, root_dir;
 
     fd = open(diskname, O_RDWR);
 
@@ -149,41 +147,45 @@ void list_disk(char *diskname)
 
     boot = (BootEntry *)(addr);
 
-    FATs = (int)boot->BPB_NumFATs;
-    FATsize = (int)boot->BPB_FATSz32;
-    bytes_p_sector = (int)boot->BPB_BytsPerSec;
-    sectors_p_cluster = (int)boot->BPB_SecPerClus;
-    reserved_sec = (int)boot->BPB_RsvdSecCnt;
-    root_cluster = (int)boot->BPB_RootClus;
+    int FATs = (int)boot->BPB_NumFATs;
+    int FATsize = (int)boot->BPB_FATSz32;
+    int bytes_p_sector = (int)boot->BPB_BytsPerSec;
+    int sectors_p_cluster = (int)boot->BPB_SecPerClus;
+    int reserved_sec = (int)boot->BPB_RsvdSecCnt;
+    int root_cluster = (int)boot->BPB_RootClus;
 
-    root_dir = reserved_sec + (FATs * FATsize) + (root_cluster - 2);
+    //printf("%d\n", root_cluster);
 
-    //printf("%d\n", root_dir);
+    int FAT_offset = reserved_sec + (FATs * FATsize) + (root_cluster - 2);
+    int root_offset = (sectors_p_cluster * bytes_p_sector) * FAT_offset;
 
-    root_dir = (sectors_p_cluster * bytes_p_sector) * root_dir;
+    //printf("%d\n", FAT_offset);
+    //printf("%d\n", root_offset);
 
-    //printf("%d\n", root_dir);
-
-    dir = (DirEntry *)(addr + root_dir);
+    dir = (DirEntry *)(addr + root_offset);
 
     char *name;
-    int size, s_cluster, num_of_entries = 0;
+    int size = 0, s_cluster = 0, num_of_entries = 0, entries_in_cluster = 0;
+
+    int next_cluster = root_cluster;
 
     while(dir->DIR_Name[0] != '\0')
     {
-        if(dir->DIR_Name[0] == 0xe5 || dir->DIR_Name[0] == 0x00)
-        {
-            dir++;
-            continue;
-        }
-
         name = (char *)dir->DIR_Name;
         size = (int)dir->DIR_FileSize;
         s_cluster = (int)((dir->DIR_FstClusHI << 16) + dir->DIR_FstClusLO);
         num_of_entries++;
 
-        printf("%s", name);
-        printf("%d", s_cluster);
+        if(dir->DIR_Name[0] == 0xe5)
+        {
+            //skip deleted files
+            dir++;
+            entries_in_cluster++;
+            continue;
+        }
+
+        // printf("%s", name);
+        // printf("%d", s_cluster);
 
         for(int i = 0; i < 11; i++){
 
@@ -232,7 +234,31 @@ void list_disk(char *diskname)
             }
         }
 
+        entries_in_cluster++;
+
+        if(entries_in_cluster > 15)
+        {
+            //go to next cluster
+            FAT_offset = (bytes_p_sector * reserved_sec) + 4 * (root_cluster);
+
+            next_cluster = ((int)(addr[FAT_offset])) - 2;
+
+            dir = (DirEntry *)(addr + (root_offset + (next_cluster * (bytes_p_sector * sectors_p_cluster))));
+
+            //printf("%d\n", root_offset +(next_cluster * (bytes_p_sector * sectors_p_cluster)));
+            
+            entries_in_cluster = 0;
+            
+            if(dir->DIR_Name[0] == 0x00)
+            {
+                break;
+            }
+
+            continue;
+        }
+
         dir++;
+        
     }
 
     printf("Total number of entries = %d\n", num_of_entries);
@@ -244,7 +270,7 @@ void list_disk(char *diskname)
 
 }
 
-void restore_file()
+void restore_file(char *diskname, char *filename)
 {
     printf("recovery\n");
 
