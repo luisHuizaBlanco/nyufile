@@ -174,14 +174,38 @@ void list_disk(char *diskname)
         name = (char *)dir->DIR_Name;
         size = (int)dir->DIR_FileSize;
         s_cluster = (int)((dir->DIR_FstClusHI << 16) + dir->DIR_FstClusLO);
-        num_of_entries++;
 
         if(dir->DIR_Name[0] == 0xe5)
         {
             //skip deleted files
-            dir++;
             entries_in_cluster++;
+
+            if(entries_in_cluster > 15)
+            {
+                //go to next cluster
+                FAT_offset = (bytes_p_sector * reserved_sec) + 4 * (root_cluster);
+
+                next_cluster = ((int)(addr[FAT_offset])) - 2;
+
+                dir = (DirEntry *)(addr + (root_offset + (next_cluster * (bytes_p_sector * sectors_p_cluster))));
+
+                entries_in_cluster = 0;
+                
+                if(dir->DIR_Name[0] == 0x00)
+                {
+                    break;
+                }
+            }
+            else
+            {
+                dir++;
+            }
+
             continue;
+        }
+        else
+        {
+            num_of_entries++;
         }
 
         // printf("%s", name);
@@ -272,7 +296,173 @@ void list_disk(char *diskname)
 
 void restore_file(char *diskname, char *filename)
 {
-    printf("recovery\n");
+    int fd;
+    unsigned char *addr;
+    size_t length;
+    struct stat sb;
+    struct BootEntry *boot;
+    struct DirEntry *dir;
+
+    fd = open(diskname, O_RDWR);
+
+    if (fd == -1)
+    {
+        exit(0);
+    }
+    
+    if (fstat(fd, &sb) == -1) 
+    {
+        exit(0);
+    }
+
+    length = sb.st_size;         
+
+    addr = mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+
+    if (addr == MAP_FAILED)
+    {
+        exit(0);
+    }
+
+    boot = (BootEntry *)(addr);
+
+    int FATs = (int)boot->BPB_NumFATs;
+    int FATsize = (int)boot->BPB_FATSz32;
+    int bytes_p_sector = (int)boot->BPB_BytsPerSec;
+    int sectors_p_cluster = (int)boot->BPB_SecPerClus;
+    int reserved_sec = (int)boot->BPB_RsvdSecCnt;
+    int root_cluster = (int)boot->BPB_RootClus;
+
+    int FAT_offset = reserved_sec + (FATs * FATsize) + (root_cluster - 2);
+    int root_offset = (sectors_p_cluster * bytes_p_sector) * FAT_offset;
+
+    dir = (DirEntry *)(addr + root_offset);
+
+    char *name;
+    int num_of_entries = 0, entries_in_cluster = 0;
+    //int size = 0, s_cluster = 0;
+    int next_cluster = root_cluster;
+
+    //name parser
+
+    const char dot[] = ".";
+
+    char deleted_name[13];
+    memset(deleted_name, ' ', 12);
+    deleted_name[12] = '\0';
+
+    char * token = strtok(filename, dot);
+
+    int len = strlen(token);
+
+    int first = 0;
+
+    while (token != NULL) {
+
+        if(first == 0)
+        {
+            for(int i = 0; i < len; i++)
+            {
+                deleted_name[i] = token[i];
+
+            }
+
+            first = 1;
+        }
+        else if(first == 1 && token != NULL)
+        {
+            len = strlen(token);
+
+            for(int i = 0; i < len && i < 3; i++)
+            {
+                deleted_name[i + 8] = token[i];
+
+            }
+            first = 2;
+        }
+        
+        token = strtok(NULL, dot);
+    }
+
+    int ambiguous_files = 0;
+
+    //format the filename to be like the names in the directories
+
+    while(dir->DIR_Name[0] != '\0')
+    {
+        name = (char *)dir->DIR_Name;
+        // size = (int)dir->DIR_FileSize;
+        // s_cluster = (int)((dir->DIR_FstClusHI << 16) + dir->DIR_FstClusLO);
+        num_of_entries++;
+
+        if(dir->DIR_Name[0] == 0xe5)
+        {
+            if(strcmp(name + 1, deleted_name + 1) == 0)
+            {
+                
+
+                ambiguous_files++;
+            }
+
+            //skip deleted files
+            entries_in_cluster++;
+
+            if(entries_in_cluster > 15)
+            {
+                //go to next cluster
+                FAT_offset = (bytes_p_sector * reserved_sec) + 4 * (root_cluster);
+
+                next_cluster = ((int)(addr[FAT_offset])) - 2;
+
+                dir = (DirEntry *)(addr + (root_offset + (next_cluster * (bytes_p_sector * sectors_p_cluster))));
+
+                entries_in_cluster = 0;
+                
+                if(dir->DIR_Name[0] == 0x00)
+                {
+                    break;
+                }
+            }
+            else
+            {
+                dir++;
+            }
+
+            continue;
+        }
+
+        // printf("%s", name);
+        // printf("%d", s_cluster);
+
+
+
+        entries_in_cluster++;
+
+        if(entries_in_cluster > 15)
+        {
+            //go to next cluster
+            FAT_offset = (bytes_p_sector * reserved_sec) + 4 * (root_cluster);
+
+            next_cluster = ((int)(addr[FAT_offset])) - 2;
+
+            dir = (DirEntry *)(addr + (root_offset + (next_cluster * (bytes_p_sector * sectors_p_cluster))));
+
+            entries_in_cluster = 0;
+            
+            if(dir->DIR_Name[0] == 0x00)
+            {
+                break;
+            }
+
+            continue;
+        }
+
+        dir++;
+        
+    }
+
+    munmap(addr, length);
+    close(fd);
 
     exit(0);
 
@@ -315,7 +505,7 @@ int main(int argc, char *argv[])
         {
             if(argc == 4)
             {
-                restore_file();
+                restore_file(argv[1], argv[3]);
 
             }
 
