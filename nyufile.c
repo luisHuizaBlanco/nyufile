@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <stdint.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <fcntl.h>
@@ -69,7 +70,7 @@ void validate()
 void print_disk(char *diskname)
 {
     int fd;
-    unsigned char *addr;
+    unsigned char *disk;
     size_t length;
     struct stat sb;
     struct BootEntry *boot;
@@ -88,14 +89,14 @@ void print_disk(char *diskname)
 
     length = sb.st_size;         
 
-    addr = mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    disk = mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 
-    if (addr == MAP_FAILED)
+    if (disk == MAP_FAILED)
     {
         exit(0);
     }
 
-    boot = (BootEntry *)(addr);
+    boot = (BootEntry *)(disk);
 
     int FATs = (int)boot->BPB_NumFATs;
     int bytes_p_sector = (int)boot->BPB_BytsPerSec;
@@ -108,21 +109,24 @@ void print_disk(char *diskname)
     printf("Number of sectors per cluster = %d\n", sectors_p_cluster);
     printf("Number of reserved sectors = %d\n", reserved_sec);
 
-    munmap(addr, length);
+    munmap(disk, length);
     close(fd);
 
     exit(0);
 
 }
 
+// void print_dir_entry()
+// {
+
+// }
+
 void list_disk(char *diskname)
 {
     int fd;
-    unsigned char *addr;
+    unsigned char *disk;
     size_t length;
     struct stat sb;
-    struct BootEntry *boot;
-    struct DirEntry *dir;
 
     fd = open(diskname, O_RDWR);
 
@@ -138,63 +142,79 @@ void list_disk(char *diskname)
 
     length = sb.st_size;         
 
-    addr = mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    disk = mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 
-    if (addr == MAP_FAILED)
+    if (disk == MAP_FAILED)
     {
         exit(0);
     }
+    
+    //boot directory
+    struct BootEntry *boot;
+    boot = (BootEntry *)(disk);
 
-    boot = (BootEntry *)(addr);
-
+    //variables needed from the boot sector
     int FATs = (int)boot->BPB_NumFATs;
     int FATsize = (int)boot->BPB_FATSz32;
     int bytes_p_sector = (int)boot->BPB_BytsPerSec;
     int sectors_p_cluster = (int)boot->BPB_SecPerClus;
     int reserved_sec = (int)boot->BPB_RsvdSecCnt;
     int root_cluster = (int)boot->BPB_RootClus;
+    int bytes_p_cluster = bytes_p_sector * sectors_p_cluster;
 
-    //printf("%d\n", root_cluster);
+    //offsets for the FAT table and directory
+    int FAT_Table = reserved_sec * bytes_p_sector;
+    int Data_Region = ((FATs * FATsize) * bytes_p_sector) + FAT_Table;
+    int dir_start = Data_Region + ((root_cluster - 2) * bytes_p_cluster);
 
-    int FAT_offset = reserved_sec + (FATs * FATsize) + (root_cluster - 2);
-    int root_offset = (sectors_p_cluster * bytes_p_sector) * FAT_offset;
+    printf("%d\n", Data_Region);
+    printf("%d\n", dir_start);
 
-    //printf("%d\n", FAT_offset);
-    //printf("%d\n", root_offset);
+    struct DirEntry *dir;
+    dir = (DirEntry *)(disk + dir_start);
 
-    dir = (DirEntry *)(addr + root_offset);
-
+    //variables for directory entries
     char *name;
-    int size = 0, s_cluster = 0, num_of_entries = 0, entries_in_cluster = 0;
-
-    int next_cluster = root_cluster;
+    int size = 0;
+    int s_cluster = 0; 
+    int num_of_entries = 0; 
+    int entries_in_cluster = 0;
+    int max_entries_in_cluster = bytes_p_cluster/sizeof(DirEntry);
+    int offset_to_next_cluster = 0;
+    int current_cluster = root_cluster;
+    uint32_t EndOfFile = 0x0fffffff;
 
     while(dir->DIR_Name[0] != '\0')
     {
+        //updating variables
         name = (char *)dir->DIR_Name;
         size = (int)dir->DIR_FileSize;
         s_cluster = (int)((dir->DIR_FstClusHI << 16) + dir->DIR_FstClusLO);
 
+        //skip deleted files
         if(dir->DIR_Name[0] == 0xe5)
         {
-            //skip deleted files
             entries_in_cluster++;
 
-            if(entries_in_cluster > 15)
+            if(entries_in_cluster == max_entries_in_cluster)
             {
-                //go to next cluster
-                FAT_offset = (bytes_p_sector * reserved_sec) + 4 * (root_cluster);
+                //check if next cluster is EOF
+                uint32_t *ptr = (uint32_t *)&disk[FAT_Table + (4 * current_cluster)];
+                uint32_t cluster_value = *ptr;
 
-                next_cluster = ((int)(addr[FAT_offset])) - 2;
-
-                dir = (DirEntry *)(addr + (root_offset + (next_cluster * (bytes_p_sector * sectors_p_cluster))));
-
-                entries_in_cluster = 0;
-                
-                if(dir->DIR_Name[0] == 0x00)
+                if(cluster_value == EndOfFile)
                 {
                     break;
                 }
+
+                //go to next cluster
+                current_cluster = ((int)(disk[FAT_Table + (4 * current_cluster)])) - 2;
+                offset_to_next_cluster = current_cluster * bytes_p_cluster;
+                dir = (DirEntry *)(disk + (dir_start + offset_to_next_cluster));
+                entries_in_cluster = 0;
+
+                continue;
+                
             }
             else
             {
@@ -207,9 +227,6 @@ void list_disk(char *diskname)
         {
             num_of_entries++;
         }
-
-        // printf("%s", name);
-        // printf("%d", s_cluster);
 
         for(int i = 0; i < 11; i++){
 
@@ -260,23 +277,21 @@ void list_disk(char *diskname)
 
         entries_in_cluster++;
 
-        if(entries_in_cluster > 15)
+        if(entries_in_cluster == max_entries_in_cluster)
         {
-            //go to next cluster
-            FAT_offset = (bytes_p_sector * reserved_sec) + 4 * (root_cluster);
+            //check if next cluster is EOF
+            uint32_t *ptr = (uint32_t *)&disk[FAT_Table + (4 * current_cluster)];
+            uint32_t cluster_value = *ptr;
 
-            next_cluster = ((int)(addr[FAT_offset])) - 2;
-
-            dir = (DirEntry *)(addr + (root_offset + (next_cluster * (bytes_p_sector * sectors_p_cluster))));
-
-            //printf("%d\n", root_offset +(next_cluster * (bytes_p_sector * sectors_p_cluster)));
-            
-            entries_in_cluster = 0;
-            
-            if(dir->DIR_Name[0] == 0x00)
+            if(cluster_value == EndOfFile)
             {
                 break;
             }
+            //go to next cluster
+            current_cluster = ((int)(disk[FAT_Table + (4 * current_cluster)])) - 2;
+            offset_to_next_cluster = current_cluster * bytes_p_cluster;
+            dir = (DirEntry *)(disk + (dir_start + offset_to_next_cluster));
+            entries_in_cluster = 0;
 
             continue;
         }
@@ -287,7 +302,7 @@ void list_disk(char *diskname)
 
     printf("Total number of entries = %d\n", num_of_entries);
 
-    munmap(addr, length);
+    munmap(disk, length);
     close(fd);
 
     exit(0);
@@ -297,7 +312,7 @@ void list_disk(char *diskname)
 void restore_file(char *diskname, char *filename)
 {
     int fd;
-    unsigned char *addr;
+    unsigned char *disk;
     size_t length;
     struct stat sb;
     struct BootEntry *boot;
@@ -317,46 +332,59 @@ void restore_file(char *diskname, char *filename)
 
     length = sb.st_size;         
 
-    addr = mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    disk = mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 
-    if (addr == MAP_FAILED)
+    if (disk == MAP_FAILED)
     {
         exit(0);
     }
 
-    boot = (BootEntry *)(addr);
+    //boot directory
+    struct BootEntry *boot;
+    boot = (BootEntry *)(disk);
 
+    //variables needed from the boot sector
     int FATs = (int)boot->BPB_NumFATs;
     int FATsize = (int)boot->BPB_FATSz32;
     int bytes_p_sector = (int)boot->BPB_BytsPerSec;
     int sectors_p_cluster = (int)boot->BPB_SecPerClus;
     int reserved_sec = (int)boot->BPB_RsvdSecCnt;
     int root_cluster = (int)boot->BPB_RootClus;
+    int bytes_p_cluster = bytes_p_sector * sectors_p_cluster;
 
-    int FAT_offset = reserved_sec + (FATs * FATsize) + (root_cluster - 2);
-    int root_offset = (sectors_p_cluster * bytes_p_sector) * FAT_offset;
+    //offsets for the FAT table and directory
+    int FAT_Table = reserved_sec * bytes_p_sector;
+    int Data_Region = ((FATs * FATsize) * bytes_p_sector) + FAT_Table;
+    int dir_start = Data_Region + ((root_cluster - 2) * bytes_p_cluster);
 
-    dir = (DirEntry *)(addr + root_offset);
+    // printf("%d\n", Data_Region);
+    // printf("%d\n", dir_start);
+
+    struct DirEntry *dir;
+    dir = (DirEntry *)(disk + dir_start);
 
     char *name;
-    int num_of_entries = 0, entries_in_cluster = 0;
-    //int size = 0, s_cluster = 0;
-    int next_cluster = root_cluster;
+    int size = 0;
+    int s_cluster = 0; 
+    int num_of_entries = 0; 
+    int entries_in_cluster = 0;
+    int max_entries_in_cluster = bytes_p_cluster/sizeof(DirEntry);
+    int offset_to_next_cluster = 0;
+    int current_cluster = root_cluster;
+    uint32_t EndOfFile = 0x0fffffff;
 
     //name parser
-
     const char dot[] = ".";
-
-    char deleted_name[13];
+    char deleted_name[12];
     memset(deleted_name, ' ', 12);
-    deleted_name[12] = '\0';
-
-    char * token = strtok(filename, dot);
-
+    deleted_name[11] = '\0';
+    
+    //format the filename to be like the names in the directories
+    char * search_file = strdup(filename);
+    char * token = strtok(search_file, dot);
     int len = strlen(token);
-
     int first = 0;
-
+    
     while (token != NULL) {
 
         if(first == 0)
@@ -384,9 +412,10 @@ void restore_file(char *diskname, char *filename)
         token = strtok(NULL, dot);
     }
 
-    int ambiguous_files = 0;
+    int similar_files = 0;
+    char * recovered_name = NULL;
 
-    //format the filename to be like the names in the directories
+    // printf("%s\n", deleted_name);
 
     while(dir->DIR_Name[0] != '\0')
     {
@@ -397,62 +426,34 @@ void restore_file(char *diskname, char *filename)
 
         if(dir->DIR_Name[0] == 0xe5)
         {
-            if(strcmp(name + 1, deleted_name + 1) == 0)
+            // printf("%s\n", name);
+            // printf("%s\n", deleted_name);
+
+            if(strncmp(name + 1, deleted_name + 1, 10) == 0)
             {
-                
+                recovered_name = name;
 
-                ambiguous_files++;
+                similar_files++;
             }
-
-            //skip deleted files
-            entries_in_cluster++;
-
-            if(entries_in_cluster > 15)
-            {
-                //go to next cluster
-                FAT_offset = (bytes_p_sector * reserved_sec) + 4 * (root_cluster);
-
-                next_cluster = ((int)(addr[FAT_offset])) - 2;
-
-                dir = (DirEntry *)(addr + (root_offset + (next_cluster * (bytes_p_sector * sectors_p_cluster))));
-
-                entries_in_cluster = 0;
-                
-                if(dir->DIR_Name[0] == 0x00)
-                {
-                    break;
-                }
-            }
-            else
-            {
-                dir++;
-            }
-
-            continue;
         }
-
-        // printf("%s", name);
-        // printf("%d", s_cluster);
-
-
 
         entries_in_cluster++;
 
-        if(entries_in_cluster > 15)
+        if(entries_in_cluster == max_entries_in_cluster)
         {
-            //go to next cluster
-            FAT_offset = (bytes_p_sector * reserved_sec) + 4 * (root_cluster);
+            //check if next cluster is EOF
+            uint32_t *ptr = (uint32_t *)&disk[FAT_Table + (4 * current_cluster)];
+            uint32_t cluster_value = *ptr;
 
-            next_cluster = ((int)(addr[FAT_offset])) - 2;
-
-            dir = (DirEntry *)(addr + (root_offset + (next_cluster * (bytes_p_sector * sectors_p_cluster))));
-
-            entries_in_cluster = 0;
-            
-            if(dir->DIR_Name[0] == 0x00)
+            if(cluster_value == EndOfFile)
             {
                 break;
             }
+            //go to next cluster
+            current_cluster = ((int)(disk[FAT_Table + (4 * current_cluster)])) - 2;
+            offset_to_next_cluster = current_cluster * bytes_p_cluster;
+            dir = (DirEntry *)(disk + (dir_start + offset_to_next_cluster));
+            entries_in_cluster = 0;
 
             continue;
         }
@@ -461,7 +462,23 @@ void restore_file(char *diskname, char *filename)
         
     }
 
-    munmap(addr, length);
+    if(similar_files > 1)
+    {
+        printf("%s: multiple candidates found\n", filename);
+    }
+    else if(similar_files == 1)
+    {
+        recovered_name[0] = filename[0];
+
+        printf("%s: successfully recovered\n", filename);
+    }
+    else
+    {
+        printf("%s: file not found\n", filename);
+    }
+
+    munmap(disk, length);
+    free(search_file);
     close(fd);
 
     exit(0);
