@@ -616,7 +616,7 @@ void restore_file_with_sha(char *diskname, char *filename, unsigned char * sha)
 
     //unsigned char empty[SHA_DIGEST_LENGTH + 1] = "da39a3ee5e6b4b0d3255bfef95601890afd80709";
 
-    unsigned char * buffer = NULL;
+    //unsigned char * buffer = NULL;
     
     while (token != NULL) {
 
@@ -659,15 +659,15 @@ void restore_file_with_sha(char *diskname, char *filename, unsigned char * sha)
             {
                 s_cluster = (unsigned int)((dir->DIR_FstClusHI << 16) + dir->DIR_FstClusLO);
 
-                SHA1(disk + dir_start + (s_cluster * bytes_p_cluster), dir->DIR_FileSize, buffer);
+                // SHA1(disk + dir_start + (s_cluster * bytes_p_cluster), dir->DIR_FileSize, buffer);
 
-                // printf("%s\n", buffer);
-                // printf("%s\n", sha);
+                // // printf("%s\n", buffer);
+                // // printf("%s\n", sha);
 
-                if((strncmp((char *) buffer, (char *) sha, SHA_DIGEST_LENGTH)) == 0 )
-                {
-                    deleted = dir;
-                }
+                // if((strncmp((char *) buffer, (char *) sha, SHA_DIGEST_LENGTH)) == 0 )
+                // {
+                //     deleted = dir;
+                // }
             }
         }
 
@@ -719,9 +719,6 @@ void restore_file_with_sha(char *diskname, char *filename, unsigned char * sha)
         {
             ptr_to_deleted2 = (uint32_t *)&disk[FAT_Table + (Data_Region/2) + (4 * s_cluster)];
         }
-
-        // printf("%d\n", num_of_cluster);
-        // printf("%d\n", FAT_Table + (4 * s_cluster));
 
         for(unsigned int i = 0; i < num_of_cluster; i++)
         {
