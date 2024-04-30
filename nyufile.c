@@ -162,14 +162,14 @@ void list_disk(char *diskname)
 
     //offsets for the FAT table and directory
     unsigned int FAT_Table = reserved_sec * bytes_p_sector;
-    unsigned int Data_Region = ((FATs * FATsize) * bytes_p_sector) + FAT_Table;
-    unsigned int dir_start = Data_Region + ((root_cluster - 2) * bytes_p_cluster);
+    unsigned int Data_Region = ((FATs * FATsize) * bytes_p_sector);
+    unsigned int dir_start = Data_Region + FAT_Table;
 
     // printf("%d\n", Data_Region);
     // printf("%d\n", dir_start);
 
     struct DirEntry *dir;
-    dir = (DirEntry *)(disk + dir_start);
+    dir = (DirEntry *)(disk + dir_start + ((root_cluster - 2) * bytes_p_cluster));
 
     //variables for directory entries
     char *name;
@@ -189,34 +189,31 @@ void list_disk(char *diskname)
         size = dir->DIR_FileSize;
         s_cluster = (unsigned int)((dir->DIR_FstClusHI << 16) + dir->DIR_FstClusLO);
 
+        if(entries_in_cluster == max_entries_in_cluster)
+        {
+            //check if next cluster is EOF
+            uint32_t *ptr = (uint32_t *)&disk[FAT_Table + (4 * current_cluster)];
+            uint32_t cluster_value = *ptr;
+
+            if(cluster_value == EndOfFile || cluster_value == 0x00)
+            {
+                break;
+            }
+            //go to next cluster
+            current_cluster = cluster_value;
+            offset_to_next_cluster = (current_cluster - 2) * bytes_p_cluster;
+            dir = (DirEntry *)(disk + (dir_start + offset_to_next_cluster));
+            entries_in_cluster = 0;
+
+            continue;
+        }
+
         //skip deleted files
         if(dir->DIR_Name[0] == 0xe5)
         {
             entries_in_cluster++;
 
-            if(entries_in_cluster == max_entries_in_cluster)
-            {
-                //check if next cluster is EOF
-                uint32_t *ptr = (uint32_t *)&disk[FAT_Table + (4 * current_cluster)];
-                uint32_t cluster_value = *ptr;
-
-                if(cluster_value == EndOfFile || cluster_value == 0x00)
-                {
-                    break;
-                }
-                //go to next cluster
-                current_cluster = cluster_value;
-                offset_to_next_cluster = (current_cluster - 2) * bytes_p_cluster;
-                dir = (DirEntry *)(disk + (dir_start + offset_to_next_cluster));
-                entries_in_cluster = 0;
-
-                continue;
-                
-            }
-            else
-            {
-                dir++;
-            }
+            dir++;
 
             continue;
         }
@@ -286,25 +283,6 @@ void list_disk(char *diskname)
 
         entries_in_cluster++;
 
-        if(entries_in_cluster == max_entries_in_cluster)
-        {
-            //check if next cluster is EOF
-            uint32_t *ptr = (uint32_t *)&disk[FAT_Table + (4 * current_cluster)];
-            uint32_t cluster_value = *ptr;
-
-            if(cluster_value == EndOfFile || cluster_value == 0x00)
-            {
-                break;
-            }
-            //go to next cluster
-            current_cluster = cluster_value;
-            offset_to_next_cluster = (current_cluster - 2) * bytes_p_cluster;
-            dir = (DirEntry *)(disk + (dir_start + offset_to_next_cluster));
-            entries_in_cluster = 0;
-
-            continue;
-        }
-
         dir++;
         
     }
@@ -362,13 +340,13 @@ void restore_file(char *diskname, char *filename)
     //offsets for the FAT table and directory
     unsigned int FAT_Table = reserved_sec * bytes_p_sector;
     unsigned int Data_Region = ((FATs * FATsize) * bytes_p_sector);
-    unsigned int dir_start = Data_Region + FAT_Table + ((root_cluster - 2) * bytes_p_cluster);
+    unsigned int dir_start = Data_Region + FAT_Table;
 
     // printf("%d\n", Data_Region);
     // printf("%d\n", dir_start);
 
     struct DirEntry *dir;
-    dir = (DirEntry *)(disk + dir_start);
+    dir = (DirEntry *)(disk + dir_start + ((root_cluster - 2) * bytes_p_cluster));
 
     //variables for directory entries
     char *name;
@@ -581,13 +559,13 @@ void restore_file_with_sha(char *diskname, char *filename, char * sha)
     //offsets for the FAT table and directory
     unsigned int FAT_Table = reserved_sec * bytes_p_sector;
     unsigned int Data_Region = ((FATs * FATsize) * bytes_p_sector);
-    unsigned int dir_start = Data_Region + FAT_Table + ((root_cluster - 2) * bytes_p_cluster);
+    unsigned int dir_start = Data_Region + FAT_Table;
 
     // printf("%d\n", Data_Region);
     // printf("%d\n", dir_start);
 
     struct DirEntry *dir;
-    dir = (DirEntry *)(disk + dir_start);
+    dir = (DirEntry *)(disk + dir_start + ((root_cluster - 2) * bytes_p_cluster));
 
     //variables for directory entries
     char *name;

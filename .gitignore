@@ -76,3 +76,8 @@ test/a.out
 test/hello.txt
 test/hola.txt
 test/sha.c
+fat32copy.disk
+before
+after2
+after
+disk4
