@@ -10,8 +10,6 @@
 
 #define SHA_DIGEST_LENGTH 20
 
-unsigned char *SHA1(const unsigned char *d, size_t n, unsigned char *md);
-
 #pragma pack(push,1)
 typedef struct BootEntry {
   unsigned char  BS_jmpBoot[3];     // Assembly instruction to jump to boot code
@@ -539,7 +537,7 @@ void restore_file(char *diskname, char *filename)
 
 }
 
-void restore_file_with_sha(char *diskname, char *filename, unsigned char * sha)
+void restore_file_with_sha(char *diskname, char *filename, char * sha)
 {
     int fd;
     unsigned char *disk;
@@ -614,9 +612,16 @@ void restore_file_with_sha(char *diskname, char *filename, unsigned char * sha)
     int len = strlen(token);
     int first = 0;
 
-    //unsigned char empty[SHA_DIGEST_LENGTH + 1] = "da39a3ee5e6b4b0d3255bfef95601890afd80709";
+    size_t shalen = strlen(sha);
 
-    //unsigned char * buffer = NULL;
+    SHA_CTX shactx;
+    unsigned char received_sha[SHA_DIGEST_LENGTH];
+    SHA1_Init(&shactx);
+    SHA1_Update(&shactx, (unsigned char *) sha, shalen);
+    SHA1_Final(received_sha, &shactx);
+
+    unsigned char file_sha[SHA_DIGEST_LENGTH];
+    size_t file_len;
     
     while (token != NULL) {
 
@@ -659,15 +664,26 @@ void restore_file_with_sha(char *diskname, char *filename, unsigned char * sha)
             {
                 s_cluster = (unsigned int)((dir->DIR_FstClusHI << 16) + dir->DIR_FstClusLO);
 
-                // SHA1(disk + dir_start + (s_cluster * bytes_p_cluster), dir->DIR_FileSize, buffer);
+                file_len = (size_t)dir->DIR_FileSize;
 
-                // // printf("%s\n", buffer);
-                // // printf("%s\n", sha);
+                SHA_CTX shactx2;
+                SHA1_Init(&shactx2);
+                SHA1_Update(&shactx2, disk + dir_start + (s_cluster * bytes_p_cluster), file_len);
+                SHA1_Final(file_sha, &shactx2);
 
-                // if((strncmp((char *) buffer, (char *) sha, SHA_DIGEST_LENGTH)) == 0 )
-                // {
-                //     deleted = dir;
-                // }
+                char file_sha_str[(2 * SHA_DIGEST_LENGTH) + 1];
+                
+                for (int i = 0; i < SHA_DIGEST_LENGTH; i++) {
+                    sprintf(&file_sha_str[i * 2], "%02x", file_sha[i]);
+                }
+
+                // printf("%s\n", file_sha_str);
+                // printf("%s\n", sha);
+
+                if(strncmp(file_sha_str, sha, 40) == 0)
+                {
+                    deleted = dir;
+                }
             }
         }
 
@@ -794,7 +810,7 @@ int main(int argc, char *argv[])
             {
                 if(strncmp(argv[4], "-s", 2) == 0)
                 {
-                    restore_file_with_sha(argv[1], argv[3], (unsigned char *) argv[5]);
+                    restore_file_with_sha(argv[1], argv[3], argv[5]);
                 }
 
             }

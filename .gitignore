@@ -72,3 +72,7 @@ l
 case3hexdump.txt
 test/name
 test/name.c
+test/a.out
+test/hello.txt
+test/hola.txt
+test/sha.c
