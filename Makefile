@@ -7,7 +7,7 @@ all: nyufile
 
 # The executable 'nyufile' depends on 'nyufile.o'
 nyufile: nyufile.o
-	$(CC) $(CFLAGS) nyufile.o -o nyufile
+	$(CC) $(CFLAGS) nyufile.o -o nyufile -lcrypto
 
 # The object file 'nyufile.o' depends on 'nyufile.c'
 nyufile.o: nyufile.c
