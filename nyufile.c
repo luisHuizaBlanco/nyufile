@@ -189,31 +189,33 @@ void list_disk(char *diskname)
         size = dir->DIR_FileSize;
         s_cluster = (unsigned int)((dir->DIR_FstClusHI << 16) + dir->DIR_FstClusLO);
 
-        if(entries_in_cluster == max_entries_in_cluster)
-        {
-            //check if next cluster is EOF
-            uint32_t *ptr = (uint32_t *)&disk[FAT_Table + (4 * current_cluster)];
-            uint32_t cluster_value = *ptr;
-
-            if(cluster_value == EndOfFile || cluster_value == 0x00)
-            {
-                break;
-            }
-            //go to next cluster
-            current_cluster = cluster_value;
-            offset_to_next_cluster = (current_cluster - 2) * bytes_p_cluster;
-            dir = (DirEntry *)(disk + (dir_start + offset_to_next_cluster));
-            entries_in_cluster = 0;
-
-            continue;
-        }
-
         //skip deleted files
         if(dir->DIR_Name[0] == 0xe5)
         {
             entries_in_cluster++;
 
-            dir++;
+            if(entries_in_cluster == max_entries_in_cluster)
+            {
+                //check if next cluster is EOF
+                uint32_t *ptr = (uint32_t *)&disk[FAT_Table + (4 * current_cluster)];
+                uint32_t cluster_value = *ptr;
+
+                if(cluster_value == EndOfFile || cluster_value == 0x00)
+                {
+                    break;
+                }
+                //go to next cluster
+                current_cluster = cluster_value;
+                offset_to_next_cluster = (current_cluster - 2) * bytes_p_cluster;
+                dir = (DirEntry *)(disk + (dir_start + offset_to_next_cluster));
+                entries_in_cluster = 0;
+
+                continue;
+            }
+            else
+            {
+                dir++;
+            }
 
             continue;
         }
@@ -221,6 +223,7 @@ void list_disk(char *diskname)
         {
             num_of_entries++;
         }
+
 
         for(int i = 0; i < 11; i++){
 
@@ -282,6 +285,25 @@ void list_disk(char *diskname)
         }
 
         entries_in_cluster++;
+
+        if(entries_in_cluster == max_entries_in_cluster)
+        {
+            //check if next cluster is EOF
+            uint32_t *ptr = (uint32_t *)&disk[FAT_Table + (4 * current_cluster)];
+            uint32_t cluster_value = *ptr;
+
+            if(cluster_value == EndOfFile || cluster_value == 0x00)
+            {
+                break;
+            }
+            //go to next cluster
+            current_cluster = cluster_value;
+            offset_to_next_cluster = (current_cluster - 2) * bytes_p_cluster;
+            dir = (DirEntry *)(disk + (dir_start + offset_to_next_cluster));
+            entries_in_cluster = 0;
+
+            continue;
+        }
 
         dir++;
         
@@ -590,15 +612,8 @@ void restore_file_with_sha(char *diskname, char *filename, char * sha)
     int len = strlen(token);
     int first = 0;
 
-    size_t shalen = strlen(sha);
-
-    SHA_CTX shactx;
-    unsigned char received_sha[SHA_DIGEST_LENGTH];
-    SHA1_Init(&shactx);
-    SHA1_Update(&shactx, (unsigned char *) sha, shalen);
-    SHA1_Final(received_sha, &shactx);
-
     unsigned char file_sha[SHA_DIGEST_LENGTH];
+    
     size_t file_len;
     
     while (token != NULL) {
@@ -655,8 +670,13 @@ void restore_file_with_sha(char *diskname, char *filename, char * sha)
                     sprintf(&file_sha_str[i * 2], "%02x", file_sha[i]);
                 }
 
-                // printf("%s\n", file_sha_str);
-                // printf("%s\n", sha);
+                file_sha_str[(2 * SHA_DIGEST_LENGTH) + 1] = '\0';
+
+                printf("%s\n", file_sha_str);
+                printf("%s\n", sha);
+                printf("%ld\n", file_len);
+                printf("%d\n", dir->DIR_FileSize);
+                printf("%d\n", dir_start + (s_cluster * bytes_p_cluster));
 
                 if(strncmp(file_sha_str, sha, 40) == 0)
                 {
@@ -761,8 +781,6 @@ void non_co_restore_file()
 
 int main(int argc, char *argv[])
 {
-    //char* disk_image, filename, sha;
-
     if(argc >= 3)
     {
 
@@ -811,3 +829,21 @@ int main(int argc, char *argv[])
 
     validate();
 }
+
+/*
+References
+
+https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system
+
+https://www.geeksforgeeks.org/little-and-big-endian-mystery/
+
+https://pubs.opengroup.org/onlinepubs/009695399/basedefs/stdint.h.html
+
+https://www.gnu.org/software/libc/manual/html_node/Integers.html
+
+https://home.uncg.edu/cmp/faculty/srtate/580.f11/sha1examples.php
+
+https://linux.die.net/man/3/sha1_init
+
+https://www.tutorialspoint.com/c_standard_library/c_function_sprintf.htm
+*/
