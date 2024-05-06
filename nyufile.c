@@ -661,7 +661,7 @@ void restore_file_with_sha(char *diskname, char *filename, char * sha)
 
                 SHA_CTX shactx2;
                 SHA1_Init(&shactx2);
-                SHA1_Update(&shactx2, disk + dir_start + (s_cluster * bytes_p_cluster), file_len);
+                SHA1_Update(&shactx2, disk + dir_start + ((s_cluster - 2) * bytes_p_cluster), file_len);
                 SHA1_Final(file_sha, &shactx2);
 
                 char file_sha_str[(2 * SHA_DIGEST_LENGTH) + 1];
@@ -670,13 +670,7 @@ void restore_file_with_sha(char *diskname, char *filename, char * sha)
                     sprintf(&file_sha_str[i * 2], "%02x", file_sha[i]);
                 }
 
-                file_sha_str[(2 * SHA_DIGEST_LENGTH) + 1] = '\0';
-
-                printf("%s\n", file_sha_str);
-                printf("%s\n", sha);
-                printf("%ld\n", file_len);
-                printf("%d\n", dir->DIR_FileSize);
-                printf("%d\n", dir_start + (s_cluster * bytes_p_cluster));
+                file_sha_str[(2 * SHA_DIGEST_LENGTH)] = '\0';
 
                 if(strncmp(file_sha_str, sha, 40) == 0)
                 {
